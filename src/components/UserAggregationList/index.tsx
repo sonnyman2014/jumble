@@ -59,6 +59,7 @@ const UserAggregationList = forwardRef<
     showRelayCloseReason?: boolean
     isPubkeyFeed?: boolean
     trustScoreThreshold?: number
+    filterFn?: (event: Event) => boolean
   }
 >(
   (
@@ -69,7 +70,8 @@ const UserAggregationList = forwardRef<
       areAlgoRelays = false,
       showRelayCloseReason = false,
       isPubkeyFeed = false,
-      trustScoreThreshold
+      trustScoreThreshold,
+      filterFn
     },
     ref
   ) => {
@@ -268,6 +270,7 @@ const UserAggregationList = forwardRef<
           events.map(async (evt) => {
             if (getEventFeedTimestamp(evt) < since) return null
             if (isEventDeleted(evt)) return null
+            if (filterFn && !filterFn(evt)) return null
             if (filterMutedNotes && mutePubkeySet.has(evt.pubkey)) return null
             if (
               filterMutedNotes &&

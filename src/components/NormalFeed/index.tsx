@@ -5,11 +5,16 @@ import TrustScoreFilter from '@/components/TrustScoreFilter'
 import UserAggregationList, { TUserAggregationListRef } from '@/components/UserAggregationList'
 import { SPECIAL_FEED_ID } from '@/constants'
 import { prefersTouchInteraction } from '@/lib/device'
+import { isDiscoveryRelayFeed, shouldHideFollowedEvent } from '@/lib/hide-followed'
+import { useFollowList } from '@/providers/FollowListProvider'
 import { useKindFilter } from '@/providers/KindFilterProvider'
+import { useNostr } from '@/providers/NostrProvider'
 import { useUserPreferences } from '@/providers/UserPreferencesProvider'
 import { useUserTrust } from '@/providers/UserTrustProvider'
 import { TFeedSubRequest, TFeedTabConfig } from '@/types'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Event } from 'nostr-tools'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import HideFollowedFilter from '../HideFollowedFilter'
 import KindFilter from '../KindFilter'
 import { RefreshButton } from '../RefreshButton'
 
@@ -30,9 +35,11 @@ export default function NormalFeed({
   onRefresh?: () => void
   isPubkeyFeed?: boolean
 }) {
+  const { pubkey } = useNostr()
+  const { followingSet } = useFollowList()
   const { getShowKinds } = useKindFilter()
   const { getMinTrustScore } = useUserTrust()
-  const { feedTabs } = useUserPreferences()
+  const { feedTabs, getHideFollowedInFeed } = useUserPreferences()
   const feedShowKinds = useMemo(() => getShowKinds(feedId), [getShowKinds, feedId])
   const [temporaryShowKinds, setTemporaryShowKinds] = useState(feedShowKinds)
 
@@ -63,6 +70,12 @@ export default function NormalFeed({
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const showTrustScoreFilter =
     feedId !== SPECIAL_FEED_ID.FOLLOWING && feedId !== SPECIAL_FEED_ID.PINNED
+  const showHideFollowedFilter = Boolean(pubkey && isDiscoveryRelayFeed(feedId))
+  const hideFollowed = showHideFollowedFilter && getHideFollowedInFeed(feedId)
+  const feedFilterFn = useCallback(
+    (evt: Event) => !shouldHideFollowedEvent(evt, followingSet, pubkey),
+    [followingSet, pubkey]
+  )
   const trustScoreThreshold = useMemo(() => {
     return showTrustScoreFilter ? getMinTrustScore(feedId) : undefined
   }, [feedId, showTrustScoreFilter, getMinTrustScore])
@@ -114,6 +127,7 @@ export default function NormalFeed({
                 }}
               />
             )}
+            {showHideFollowedFilter && <HideFollowedFilter feedId={feedId} />}
             {showTrustScoreFilter && (
               <TrustScoreFilter filterId={feedId} onOpenChange={handleTrustFilterOpenChange} />
             )}
@@ -139,6 +153,7 @@ export default function NormalFeed({
             showRelayCloseReason={showRelayCloseReason}
             isPubkeyFeed={isPubkeyFeed}
             trustScoreThreshold={trustScoreThreshold}
+            filterFn={hideFollowed ? feedFilterFn : undefined}
           />
         ) : (
           <NoteList
@@ -150,6 +165,7 @@ export default function NormalFeed({
             showRelayCloseReason={showRelayCloseReason}
             isPubkeyFeed={isPubkeyFeed}
             trustScoreThreshold={trustScoreThreshold}
+            filterFn={hideFollowed ? feedFilterFn : undefined}
           />
         )
       ) : null}

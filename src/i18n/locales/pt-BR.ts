@@ -1,5 +1,6 @@
 export default {
   translation: {
+    'Hide posts from people you follow': 'Ocultar publicações de quem você segue',
     'Welcome! 🥳': 'Bem-vindo! 🥳',
     About: 'Sobre',
     'New Note': 'Nova nota',

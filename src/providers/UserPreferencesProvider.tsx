@@ -46,6 +46,9 @@ type TUserPreferencesContext = {
 
   notificationTabs: TNotificationTabConfig[]
   updateNotificationTabs: (tabs: TNotificationTabConfig[]) => void
+
+  getHideFollowedInFeed: (feedId: string) => boolean
+  updateHideFollowedInFeed: (feedId: string, hide: boolean) => void
 }
 
 const UserPreferencesContext = createContext<TUserPreferencesContext | undefined>(undefined)
@@ -84,6 +87,9 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
   const [feedTabs, setFeedTabs] = useState<TFeedTabConfig[]>(storage.getFeedTabs())
   const [notificationTabs, setNotificationTabs] = useState<TNotificationTabConfig[]>(
     storage.getNotificationTabs()
+  )
+  const [hideFollowedInFeedMap, setHideFollowedInFeedMap] = useState<Record<string, boolean>>(
+    storage.getHideFollowedInFeedMap()
   )
 
   useEffect(() => {
@@ -160,6 +166,15 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
     storage.setNotificationTabs(tabs)
   }
 
+  const getHideFollowedInFeed = (feedId: string) => {
+    return hideFollowedInFeedMap[feedId] === true
+  }
+
+  const updateHideFollowedInFeed = (feedId: string, hide: boolean) => {
+    storage.setHideFollowedInFeed(feedId, hide)
+    setHideFollowedInFeedMap(storage.getHideFollowedInFeedMap())
+  }
+
   return (
     <UserPreferencesContext.Provider
       value={{
@@ -190,7 +205,9 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
         feedTabs,
         updateFeedTabs,
         notificationTabs,
-        updateNotificationTabs
+        updateNotificationTabs,
+        getHideFollowedInFeed,
+        updateHideFollowedInFeed
       }}
     >
       {children}
