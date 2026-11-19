@@ -19,6 +19,7 @@ import { getDefaultRelayUrls } from '@/lib/relay'
 import { isSameAccount } from '@/lib/account'
 import { isAndroid } from '@/lib/platform'
 import client from '@/services/client.service'
+import crossTabSync, { isNewerOrDifferentReplaceableEvent } from '@/services/cross-tab-sync.service'
 import customEmojiService from '@/services/custom-emoji.service'
 import dmService from '@/services/dm.service'
 import encryptionKeyService from '@/services/encryption-key.service'
@@ -505,6 +506,100 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     customEmojiService.init(userEmojiListEvent)
   }, [userEmojiListEvent])
 
+  useEffect(() => {
+    if (!account) return
+    const activePubkey = account.pubkey
+
+    const applyIncomingReplaceable = (incoming: Event) => {
+      if (incoming.pubkey !== activePubkey) return
+      switch (incoming.kind) {
+        case kinds.Contacts:
+          setFollowListEvent((prev) => {
+            if (!isNewerOrDifferentReplaceableEvent(prev, incoming)) return prev
+            void client.updateFollowListCache(incoming)
+            return incoming
+          })
+          break
+        case kinds.Mutelist:
+          setMuteListEvent((prev) =>
+            isNewerOrDifferentReplaceableEvent(prev, incoming) ? incoming : prev
+          )
+          break
+        case kinds.BookmarkList:
+          setBookmarkListEvent((prev) =>
+            isNewerOrDifferentReplaceableEvent(prev, incoming) ? incoming : prev
+          )
+          break
+        case ExtendedKind.FAVORITE_RELAYS:
+          setFavoriteRelaysEvent((prev) =>
+            isNewerOrDifferentReplaceableEvent(prev, incoming) ? incoming : prev
+          )
+          break
+        case kinds.UserEmojiList:
+          setUserEmojiListEvent((prev) =>
+            isNewerOrDifferentReplaceableEvent(prev, incoming) ? incoming : prev
+          )
+          break
+        case kinds.Pinlist:
+          setPinListEvent((prev) =>
+            isNewerOrDifferentReplaceableEvent(prev, incoming) ? incoming : prev
+          )
+          break
+        case ExtendedKind.PINNED_USERS:
+          setPinnedUsersEvent((prev) =>
+            isNewerOrDifferentReplaceableEvent(prev, incoming) ? incoming : prev
+          )
+          break
+        case kinds.Metadata:
+          setProfileEvent((prev) => {
+            if (!isNewerOrDifferentReplaceableEvent(prev, incoming)) return prev
+            setProfile(getProfileFromEvent(incoming))
+            return incoming
+          })
+          break
+        case kinds.RelayList:
+          void client.updateRelayListCache(incoming).then((updated) => {
+            if (currentAccount.current?.pubkey !== activePubkey) return
+            setRelayList(getRelayListFromEvent(updated, storage.getFilterOutOnionRelays()))
+          })
+          break
+      }
+    }
+
+    const unsubscribe = crossTabSync.subscribe((payload) => {
+      if (payload.pubkey !== activePubkey) return
+      if (payload.type === 'replaceable-event') {
+        applyIncomingReplaceable(payload.event)
+      } else if (payload.type === 'notifications-seen-at') {
+        setNotificationsSeenAt((prev) => Math.max(prev, payload.seenAt))
+      }
+    })
+
+    const refreshFromIndexedDbOnVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void Promise.all([
+        indexedDb.getReplaceableEvent(activePubkey, kinds.Contacts),
+        indexedDb.getReplaceableEvent(activePubkey, kinds.Mutelist),
+        indexedDb.getReplaceableEvent(activePubkey, kinds.BookmarkList),
+        indexedDb.getReplaceableEvent(activePubkey, ExtendedKind.FAVORITE_RELAYS),
+        indexedDb.getReplaceableEvent(activePubkey, kinds.Pinlist),
+        indexedDb.getReplaceableEvent(activePubkey, ExtendedKind.PINNED_USERS),
+        indexedDb.getReplaceableEvent(activePubkey, kinds.Metadata)
+      ]).then((storedEvents) => {
+        if (currentAccount.current?.pubkey !== activePubkey) return
+        storedEvents.forEach((evt) => {
+          if (evt) applyIncomingReplaceable(evt)
+        })
+      })
+    }
+
+    document.addEventListener('visibilitychange', refreshFromIndexedDbOnVisible)
+    return () => {
+      unsubscribe()
+      document.removeEventListener('visibilitychange', refreshFromIndexedDbOnVisible)
+    }
+  }, [account])
+
   const requestPassword = (): Promise<string> => {
     return new Promise((resolve, reject) => {
       passwordPromiseRef.current = { resolve, reject }
@@ -989,12 +1084,14 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const updateRelayListEvent = async (relayListEvent: Event) => {
     const newRelayList = await client.updateRelayListCache(relayListEvent)
     setRelayList(getRelayListFromEvent(newRelayList, storage.getFilterOutOnionRelays()))
+    crossTabSync.broadcastReplaceableEvent(newRelayList.pubkey, newRelayList)
   }
 
   const updateProfileEvent = async (profileEvent: Event) => {
     const newProfileEvent = await indexedDb.putReplaceableEvent(profileEvent)
     setProfileEvent(newProfileEvent)
     setProfile(getProfileFromEvent(newProfileEvent))
+    crossTabSync.broadcastReplaceableEvent(newProfileEvent.pubkey, newProfileEvent)
   }
 
   const updateFollowListEvent = async (followListEvent: Event) => {
@@ -1003,6 +1100,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
     setFollowListEvent(newFollowListEvent)
     await client.updateFollowListCache(newFollowListEvent)
+    crossTabSync.broadcastReplaceableEvent(newFollowListEvent.pubkey, newFollowListEvent)
   }
 
   const updateMuteListEvent = async (muteListEvent: Event, privateTags: string[][]) => {
@@ -1011,6 +1109,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
 
     await indexedDb.putDecryptedContent(muteListEvent.id, JSON.stringify(privateTags))
     setMuteListEvent(muteListEvent)
+    crossTabSync.broadcastReplaceableEvent(muteListEvent.pubkey, muteListEvent)
   }
 
   const updateBookmarkListEvent = async (bookmarkListEvent: Event) => {
@@ -1018,6 +1117,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     if (newBookmarkListEvent.id !== bookmarkListEvent.id) return
 
     setBookmarkListEvent(newBookmarkListEvent)
+    crossTabSync.broadcastReplaceableEvent(newBookmarkListEvent.pubkey, newBookmarkListEvent)
   }
 
   const updateFavoriteRelaysEvent = async (favoriteRelaysEvent: Event) => {
@@ -1025,6 +1125,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     if (newFavoriteRelaysEvent.id !== favoriteRelaysEvent.id) return
 
     setFavoriteRelaysEvent(newFavoriteRelaysEvent)
+    crossTabSync.broadcastReplaceableEvent(newFavoriteRelaysEvent.pubkey, newFavoriteRelaysEvent)
   }
 
   const updateUserEmojiListEvent = async (userEmojiListEvent: Event) => {
@@ -1032,6 +1133,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     if (newUserEmojiListEvent.id !== userEmojiListEvent.id) return
 
     setUserEmojiListEvent(newUserEmojiListEvent)
+    crossTabSync.broadcastReplaceableEvent(newUserEmojiListEvent.pubkey, newUserEmojiListEvent)
   }
 
   const updatePinListEvent = async (pinListEvent: Event) => {
@@ -1039,6 +1141,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     if (newPinListEvent.id !== pinListEvent.id) return
 
     setPinListEvent(newPinListEvent)
+    crossTabSync.broadcastReplaceableEvent(newPinListEvent.pubkey, newPinListEvent)
   }
 
   const updatePinnedUsersEvent = async (pinnedUsersEvent: Event, privateTags?: string[][]) => {
@@ -1049,6 +1152,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       await indexedDb.putDecryptedContent(pinnedUsersEvent.id, JSON.stringify(privateTags))
     }
     setPinnedUsersEvent(newPinnedUsersEvent)
+    crossTabSync.broadcastReplaceableEvent(newPinnedUsersEvent.pubkey, newPinnedUsersEvent)
   }
 
   const updateNotificationsSeenAt = async (skipPublish = false) => {
@@ -1057,6 +1161,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     const now = dayjs().unix()
     storage.setLastReadNotificationTime(account.pubkey, now)
     setNotificationsSeenAt(now)
+    crossTabSync.broadcastNotificationsSeenAt(account.pubkey, now)
 
     // Prevent too frequent requests for signing seen notifications events
     const lastPublishedSeenNotificationsAtEventAt =
