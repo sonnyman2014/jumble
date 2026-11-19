@@ -244,6 +244,16 @@ export default {
     'Followed by': 'Followed by',
     'Mute user privately': 'Mute user privately',
     'Mute user publicly': 'Mute user publicly',
+    'Follow user privately': 'Follow user privately',
+    'Follow user publicly': 'Follow user publicly',
+    'Switch to private follow': 'Switch to private follow',
+    'Switch to public follow': 'Switch to public follow',
+    'Convert all to private': 'Convert all to private',
+    'Convert public follows to private description':
+      'Move your public following list into encrypted private follows.',
+    'Convert public follows to private confirmation':
+      'This will encrypt all your current public follows with NIP-44 and remove them from your public contact list.',
+    'Converted public follows to private': 'Converted public follows to private',
     Quotes: 'Quotes',
     'Lightning Invoice': 'Lightning Invoice',
     'Bookmark failed': 'Bookmark failed',

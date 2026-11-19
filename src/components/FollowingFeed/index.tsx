@@ -31,11 +31,14 @@ export default function FollowingFeed() {
         return
       }
 
-      const followings = await client.fetchFollowings(pubkey)
-      setHasFollowings(followings.length > 0)
-      setSubRequests(await client.generateSubRequestsForPubkeys([pubkey, ...followings], pubkey))
+      const publicFollowings = await client.fetchFollowings(pubkey)
+      const mergedFollowings = Array.from(new Set([...publicFollowings, ...Array.from(followingSet)]))
+      setHasFollowings(mergedFollowings.length > 0)
+      setSubRequests(
+        await client.generateSubRequestsForPubkeys([pubkey, ...mergedFollowings], pubkey)
+      )
 
-      if (followings.length) {
+      if (mergedFollowings.length) {
         initializedPubkeyRef.current = pubkey
       }
     }
